@@ -1,0 +1,14 @@
+qdrant-client
+langgraph
+langchain
+langchain-anthropic
+litellm
+tree-sitter
+tree-sitter-c
+anthropic
+python-dotenv
+pydantic
+structlog
+tenacity
+tiktoken
+pytest
