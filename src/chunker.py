@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import uuid
 from pathlib import Path
 
 import structlog
@@ -12,10 +13,18 @@ log = structlog.get_logger()
 
 C_LANG = Language(tsc.language())
 
+# namespace UUID for deterministic uuid5 generation
+_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
 #makes a chunk id that is identifiable no matter similarity
 def make_chunk_id(team: str, filepath: str, function_name: str) -> str:
+    """Returns human-readable key: team__filehash__function_name"""
     file_hash = hashlib.md5(filepath.encode()).hexdigest()[:6]
     return f"{team}__{file_hash}__{function_name}"
+
+def chunk_id_to_uuid(chunk_id: str) -> str:
+    """Convert human-readable chunk ID to a deterministic UUID string for Qdrant."""
+    return str(uuid.uuid5(_NAMESPACE, chunk_id))
 
 
 def parse_functions(source: bytes, filepath: str) -> list[dict]:
@@ -103,10 +112,11 @@ def chunk_file(filepath: str, team: str) -> list[dict]:
 
     chunks = []
     for fn in functions:
-        chunk_id = make_chunk_id(team, filepath, fn["function"])
+        readable_id = make_chunk_id(team, filepath, fn["function"])
         chunks.append(
             {
-                "id": chunk_id,
+                "id": chunk_id_to_uuid(readable_id),
+                "chunk_key": readable_id,
                 "team": team,
                 "file": filepath,
                 "function": fn["function"],

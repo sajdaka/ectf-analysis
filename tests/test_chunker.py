@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from src.chunker import chunk_file, chunk_repo, make_chunk_id, parse_functions
+from src.chunker import chunk_file, chunk_repo, chunk_id_to_uuid, make_chunk_id, parse_functions
 
 SAMPLE_C = b"""\
 #include <stdio.h>
@@ -87,7 +87,9 @@ def test_chunk_file_with_real_file():
     assert len(chunks) == 3
     for chunk in chunks:
         assert chunk["team"] == "test_team"
-        assert chunk["id"].startswith("test_team__")
+        assert chunk["chunk_key"].startswith("test_team__")
+        # id is a valid UUID derived from chunk_key
+        assert chunk["id"] == chunk_id_to_uuid(chunk["chunk_key"])
         assert "code" in chunk
         assert "function" in chunk
 
