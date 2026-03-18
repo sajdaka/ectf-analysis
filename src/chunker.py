@@ -35,32 +35,26 @@ def parse_functions(source: bytes, filepath: str) -> list[dict]:
     functions = []
     includes = []
 
-    # get the pre-processor shit
     for node in tree.root_node.children:
         if node.type == "preproc_include":
             include_text = source[node.start_byte : node.end_byte].decode(errors="replace").strip()
             includes.append(include_text)
+        elif node.type == "function_definition":
+            fn_name = _extract_function_name(node, source)
+            if fn_name is None:
+                log.warning("chunker.unnamed_function", file=filepath, line=node.start_point[0] + 1)
+                continue
 
-    for node in tree.root_node.children:
-        if node.type != "function_definition":
-            continue
-
-        # Extract function name from the declarator
-        fn_name = _extract_function_name(node, source)
-        if fn_name is None:
-            log.warning("chunker.unnamed_function", file=filepath, line=node.start_point[0] + 1)
-            continue
-
-        code = source[node.start_byte : node.end_byte].decode(errors="replace")
-        functions.append(
-            {
-                "function": fn_name,
-                "start_line": node.start_point[0] + 1,
-                "end_line": node.end_point[0] + 1,
-                "code": code,
-                "includes": includes,
-            }
-        )
+            code = source[node.start_byte : node.end_byte].decode(errors="replace")
+            functions.append(
+                {
+                    "function": fn_name,
+                    "start_line": node.start_point[0] + 1,
+                    "end_line": node.end_point[0] + 1,
+                    "code": code,
+                    "includes": includes,
+                }
+            )
 
     return functions
 
@@ -143,12 +137,14 @@ def chunk_repo(repo_path: str, team: str) -> list[dict]:
     log.info("chunker: repo_chunking_start", team=team, c_files=len(c_files))
 
     for c_file in c_files:
-        # Use relative path from repo root
         rel_path = str(c_file.relative_to(repo))
         chunks = chunk_file(str(c_file), team)
-        # Overwrite absolute file path with relative
+        # fix file path and chunk ID to use relative path (deterministic across machines)
         for chunk in chunks:
             chunk['file'] = rel_path
+            readable_id = make_chunk_id(team, rel_path, chunk["function"])
+            chunk['chunk_key'] = readable_id
+            chunk['id'] = chunk_id_to_uuid(readable_id)
         all_chunks.extend(chunks)
 
     log.info("chunker: repo_chunking_done", team=team, total_chunks=len(all_chunks))

@@ -3,6 +3,8 @@
 import os
 from qdrant_client import QdrantClient
 
+from src.config import QDRANT_MODE
+
 _client = None
 
 # spawns a singleton QdrantClient based on QDRANT_MODE.
@@ -12,7 +14,7 @@ def get_qdrant_client() -> QdrantClient:
     if _client is not None:
         return _client
 
-    mode = os.getenv("QDRANT_MODE", "memory")
+    mode = QDRANT_MODE
 
     if mode == "memory":
         _client = QdrantClient(location=":memory:")

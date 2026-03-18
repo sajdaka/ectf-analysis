@@ -8,28 +8,17 @@ from pathlib import Path
 import structlog
 
 from src.chunker import chunk_repo
-from src.embedder import (
-    EMBEDDING_DIM,
-    embed_texts,
-    ensure_collection,
-    _upsert_batch,
-)
+from src.config import CORPUS_COLLECTION, KNOWLEDGE_COLLECTION
+from src.embedder import embed_and_upsert, upsert_chunks
 from src.header_injector import inject_headers
-from src.qdrant_factory import get_qdrant_client
-from qdrant_client import models
 
 log = structlog.get_logger()
-
-CORPUS_COLLECTION = "corpus"
-KNOWLEDGE_COLLECTION = "knowledge"
 
 
 # ── corpus ingestion (team C code) ───────────────────────────────────────
 
 def ingest_team(team: str, repo_path: str):
     """Full pipeline: chunk → inject headers → embed → upsert to corpus."""
-    from src.embedder import upsert_chunks
-
     log.info("ingest.team_start", team=team, repo=repo_path)
 
     chunks = chunk_repo(repo_path, team)
@@ -111,14 +100,21 @@ def chunk_markdown(filepath: Path) -> list[dict]:
     return chunks
 
 
+def _knowledge_payload(chunk: dict) -> dict:
+    return {
+        "source": chunk["source"],
+        "title": chunk["title"],
+        "section": chunk["section"],
+        "content": chunk["content"],
+    }
+
+
 def ingest_knowledge(knowledge_dir: str = "./knowledge"):
     """Ingest all markdown files from knowledge directory into Qdrant."""
     kdir = Path(knowledge_dir)
     if not kdir.is_dir():
         log.error("ingest.knowledge_dir_not_found", path=knowledge_dir)
         return 0
-
-    ensure_collection(KNOWLEDGE_COLLECTION)
 
     md_files = sorted(kdir.glob("*.md"))
     # skip README
@@ -136,28 +132,9 @@ def ingest_knowledge(knowledge_dir: str = "./knowledge"):
         log.warning("ingest.knowledge_empty")
         return 0
 
-    # embed and upsert
-    texts = [c["content"] for c in all_chunks]
-    vectors = embed_texts(texts)
-
-    points = []
-    for chunk, vector in zip(all_chunks, vectors):
-        points.append(
-            models.PointStruct(
-                id=chunk["id"],
-                vector=vector.tolist(),
-                payload={
-                    "source": chunk["source"],
-                    "title": chunk["title"],
-                    "section": chunk["section"],
-                    "content": chunk["content"],
-                },
-            )
-        )
-
-    _upsert_batch(KNOWLEDGE_COLLECTION, points)
-    log.info("ingest.knowledge_done", total_chunks=len(points))
-    return len(points)
+    count = embed_and_upsert(all_chunks, KNOWLEDGE_COLLECTION, _knowledge_payload)
+    log.info("ingest.knowledge_done", total_chunks=count)
+    return count
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────

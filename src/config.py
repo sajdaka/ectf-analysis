@@ -19,6 +19,9 @@ def _int(key: str, default: int) -> int:
 
 QDRANT_MODE = os.getenv("QDRANT_MODE", "memory")
 
+CORPUS_COLLECTION = "corpus"
+MEMORY_COLLECTION = "memory"
+KNOWLEDGE_COLLECTION = "knowledge"
 
 LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL", "http://localhost:4000")
 

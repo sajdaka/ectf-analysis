@@ -25,15 +25,20 @@ _EXTRACTABLE = frozenset({
 _INCLUDE_RE = re.compile(r'#include\s+["<]([^">]+)[">]')
 
 
-def find_header(header_name: str, repo_path: Path) -> Path | None:
-    """Find a header file in the repo by name. Searches the whole tree."""
-    # strip any leading path components — just match the filename
+def build_header_index(repo_path: Path) -> dict[str, Path]:
+    """Single rglob to build {filename: shortest_path} lookup for all .h files."""
+    index: dict[str, Path] = {}
+    for hpath in repo_path.rglob("*.h"):
+        name = hpath.name
+        if name not in index or len(hpath.parts) < len(index[name].parts):
+            index[name] = hpath
+    return index
+
+
+def find_header(header_name: str, header_index: dict[str, Path]) -> Path | None:
+    """Look up a header by filename in the pre-built index."""
     base = Path(header_name).name
-    matches = list(repo_path.rglob(base))
-    if not matches:
-        return None
-    # prefer shortest path (closest to root)
-    return min(matches, key=lambda p: len(p.parts))
+    return header_index.get(base)
 
 
 def extract_definitions(header_path: Path) -> list[str]:
@@ -103,6 +108,7 @@ def inject_headers(chunks: list[dict], repo_path: str) -> list[dict]:
     Modifies chunks in place and returns them.
     """
     repo = Path(repo_path)
+    header_index = build_header_index(repo)
     # cache: header_name -> list of definition strings
     header_cache: dict[str, list[str]] = {}
 
@@ -111,23 +117,10 @@ def inject_headers(chunks: list[dict], repo_path: str) -> list[dict]:
         all_defs = []
 
         for hname in header_names:
-            # skip system headers — we only resolve project headers
-            if hname.startswith("std") or "/" not in hname and hname.endswith(".h"):
-                # could be a project header with just a name like "messaging.h"
-                pass
-            # always skip obvious system headers
-            if hname in ("stdio.h", "stdlib.h", "string.h", "stdint.h", "stdbool.h",
-                         "stddef.h", "math.h", "assert.h", "errno.h", "signal.h",
-                         "time.h", "limits.h", "float.h", "ctype.h", "unistd.h",
-                         "fcntl.h", "sys/types.h", "sys/stat.h", "sys/socket.h",
-                         "pthread.h", "semaphore.h"):
-                continue
-
+            # skip headers not found in repo (system headers, missing headers)
             if hname not in header_cache:
-                hpath = find_header(hname, repo)
+                hpath = find_header(hname, header_index)
                 if hpath is None:
-                    log.debug("header_injector.header_not_found", header=hname,
-                              chunk_fn=chunk.get("function"))
                     header_cache[hname] = []
                 else:
                     defs = extract_definitions(hpath)
